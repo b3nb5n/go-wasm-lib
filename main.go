@@ -27,12 +27,12 @@ func main() {
 		switch node := n.(type) {
 		case *ast.FuncDecl:
 			printer.Fprint(&buf, fset, gowasmlib.WrapFunc(node))
+		default:
+			return true
 		}
 
 		return true
 	})
-
-	
 
 	fmt.Println(buf.String())
 }
