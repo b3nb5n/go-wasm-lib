@@ -6,36 +6,49 @@ import (
 	"strconv"
 )
 
-func WasmCall(fn *ast.FuncDecl) *ast.CallExpr {
+func WasmCall(fn *ast.FuncDecl) (*ast.CallExpr, []ast.Stmt) {
 	var i int
 	args := make([]ast.Expr, fn.Type.Params.NumFields())
+	resolvers := make([]ast.Stmt, 0)
+
 	for _, param := range fn.Type.Params.List {
-		for range param.Names {
-			args[i] = NativeValue(
+		for _, name := range param.Names {
+			arg, resolver := ResolveValue(
+				name,
 				&ast.IndexExpr{
 					X: &ast.Ident{Name: "args"},
 					Index: &ast.BasicLit{
-						Kind: token.INT,
+						Kind:  token.INT,
 						Value: strconv.Itoa(i),
 					},
 				},
 				param.Type,
+				nil,
 			)
+
+			args[i] = arg
+			if resolver != nil {
+				resolvers = append(resolvers, resolver...)
+			}
 
 			i++
 		}
 	}
 
-	return &ast.CallExpr{
+	call := &ast.CallExpr{
 		Fun: &ast.Ident{
 			Name: fn.Name.Name,
 			Obj:  fn.Name.Obj,
 		},
 		Args: args,
 	}
+
+	return call, resolvers
 }
 
 func WrapFunc(fn *ast.FuncDecl) *ast.FuncDecl {
+	nativeCall, argResolvers := WasmCall(fn)
+
 	return &ast.FuncDecl{
 		Doc:  fn.Doc,
 		Recv: fn.Recv,
@@ -72,9 +85,9 @@ func WrapFunc(fn *ast.FuncDecl) *ast.FuncDecl {
 			},
 		},
 		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				&ast.ExprStmt{X: WasmCall(fn)},
-			},
+			List: append(argResolvers, &ast.ExprStmt{
+				X: nativeCall,
+			}),
 		},
 	}
 }

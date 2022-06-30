@@ -2,8 +2,6 @@
 
 package test_src
 
-func Add(a, b int64, _ float64) int64 {
-	return a + b
+func Add(x struct { A, B int; C *string }) int {
+	return 0
 }
-
-func Hello(name string) {}
