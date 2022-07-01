@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
-	"go/printer"
 	"go/token"
 
 	"github.com/baldwin-dev-co/go-wasm-lib/generator"
@@ -20,17 +20,14 @@ func main() {
 	}
 
 	pkg := pkgs["test_src"]
+	gen := generator.New()
 	ast.PackageExports(pkg)
-	generator.WasmWrapperPkg(pkg)
+	gen.WasmWrapperPkg(pkg)
 
 	var buf bytes.Buffer
-	ast.Inspect(pkg, func(n ast.Node) bool {
-		if decl, ok := n.(*ast.FuncDecl); ok {
-			printer.Fprint(&buf, fset, decl)
-		}
-
-		return true
-	})
+	for _, file := range pkg.Files {
+		format.Node(&buf, fset, file)
+	}
 
 	fmt.Println(buf.String())
 }

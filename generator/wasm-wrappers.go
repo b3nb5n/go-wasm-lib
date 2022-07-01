@@ -5,24 +5,22 @@ import (
 )
 
 // transforms the package  into a wasm wrapper package in place
-func WasmWrapperPkg(pkg *ast.Package) {
-
-
+func (gen *Generator) WasmWrapperPkg(pkg *ast.Package) {
 	pkgIdent := &ast.Ident{Name: pkg.Name}
 	for _, file := range pkg.Files {
 		file.Name = pkgIdent
-		WasmWrapperFile(file)
+		gen.WasmWrapperFile(file)
 	}
 
-	wasmEntry(pkg)
+	gen.wasmEntry(pkg)
 }
 
 // transforms the file into a wasm wrapper file in place.
 // each function declaration is wrapped, all other declarations are removed
-func WasmWrapperFile(file *ast.File) {
+func (gen *Generator) WasmWrapperFile(file *ast.File) {
 	for i, decl := range file.Decls {
 		if fn, ok := decl.(*ast.FuncDecl); ok {
-			WasmWrapperFunc(fn)
+			gen.WasmWrapperFunc(fn)
 			continue
 		}
 
@@ -31,8 +29,8 @@ func WasmWrapperFile(file *ast.File) {
 }
 
 // transforms the function declaration in place into a wasm wrapper around a call to the given function
-func WasmWrapperFunc(fn *ast.FuncDecl) {
-	args, argsResolver := resolveFuncArgs(fn.Type.Params)
+func (gen *Generator) WasmWrapperFunc(fn *ast.FuncDecl) {
+	args, argsResolver := gen.resolveFuncArgs(fn.Type.Params)
 	fn.Body = &ast.BlockStmt{
 		List: append(argsResolver, &ast.ReturnStmt{
 			Results: []ast.Expr{
@@ -48,6 +46,8 @@ func WasmWrapperFunc(fn *ast.FuncDecl) {
 	}
 
 	fn.Name.Name += "Wasm"
+	gen.funcs[fn.Name.Name] = fn.Type
+
 	fn.Type = &ast.FuncType{
 		Params: &ast.FieldList{
 			List: []*ast.Field{

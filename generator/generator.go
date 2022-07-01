@@ -9,3 +9,10 @@ type Generator struct {
 	aliasResolvers map[string]*ast.Ident
 }
 
+func New() *Generator {
+	return &Generator{
+		funcs: make(map[string]*ast.FuncType),
+		aliasResolvers: make(map[string]*ast.Ident),
+	}
+}
+
