@@ -8,7 +8,7 @@ import (
 	"go/printer"
 	"go/token"
 
-	"github.com/baldwin-dev-co/go-wasm-lib/gowasmlib"
+	"github.com/baldwin-dev-co/go-wasm-lib/generator"
 )
 
 func main() {
@@ -21,15 +21,12 @@ func main() {
 
 	pkg := pkgs["test_src"]
 	ast.PackageExports(pkg)
+	generator.WasmWrapperPkg(pkg)
 
 	var buf bytes.Buffer
 	ast.Inspect(pkg, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.FuncDecl:
-			printer.Fprint(&buf, fset, gowasmlib.WrapFunc(node))
-			buf.WriteByte('\n')
-		default:
-			return true
+		if decl, ok := n.(*ast.FuncDecl); ok {
+			printer.Fprint(&buf, fset, decl)
 		}
 
 		return true

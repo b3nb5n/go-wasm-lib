@@ -1,8 +1,10 @@
-package gowasmlib
+package generator
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
+	"strconv"
 )
 
 // returns an expression that casts jsValue to the given native type
@@ -23,7 +25,7 @@ func ResolveValue(
 	case *ast.StructType:
 		return resolveStruct(name, jsValue, nativeType, dst)
 	default:
-		panic("unknown native type")
+		panic(fmt.Errorf("Unrecognized native type : %v", nativeType))
 	}
 }
 
@@ -34,7 +36,6 @@ func resolveIdent(
 	dst ast.Expr,
 ) (expr ast.Expr, resolver []ast.Stmt) {
 	var method, typeCast string
-
 	switch typeStr := nativeType.String(); typeStr {
 	case "bool":
 		method = "Bool"
@@ -293,4 +294,35 @@ func resolveStruct(
 	}
 
 	return dst, resolver
+}
+
+func resolveFuncArgs(params *ast.FieldList) (args []ast.Expr, resolver []ast.Stmt) {
+	var i int
+	args = make([]ast.Expr, params.NumFields())
+	resolvers := make([]ast.Stmt, 0)
+
+	for _, param := range params.List {
+		for _, name := range param.Names {
+			args[i], resolver = ResolveValue(
+				name,
+				&ast.IndexExpr{
+					X: &ast.Ident{Name: "args"},
+					Index: &ast.BasicLit{
+						Kind:  token.INT,
+						Value: strconv.Itoa(i),
+					},
+				},
+				param.Type,
+				nil,
+			)
+
+			if resolver != nil {
+				resolvers = append(resolvers, resolver...)
+			}
+
+			i++
+		}
+	}
+
+	return args, resolvers
 }
