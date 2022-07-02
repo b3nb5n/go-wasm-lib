@@ -2,13 +2,11 @@ package main
 
 import (
 	"fmt"
-	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/baldwin-dev-co/go-wasm-lib/generator"
 )
@@ -34,15 +32,13 @@ func main() {
 	}
 
 	pkg := pkgs[pkgName]
-	gen := generator.New()
-	ast.PackageExports(pkg)
+	gen := generator.New(fset)
 	gen.WasmWrapperPkg(pkg)
 
 	outDir := filepath.Join(filepath.Dir(srcPath), filepath.Base(srcPath) + "_wasm")
 	os.MkdirAll(outDir, os.ModePerm)
 	for srcPath, fNode := range pkg.Files {
-		srcSegments := strings.SplitN(filepath.Base(srcPath), ".", 2)
-		outPath := filepath.Join(outDir, srcSegments[0] + "_wasm." + srcSegments[1])
+		outPath := filepath.Join(outDir, filepath.Base(srcPath))
 		file, err := os.Create(outPath)
 		if err != nil {
 			fmt.Printf("Error creating file %v: %v", outPath, err)
@@ -50,6 +46,9 @@ func main() {
 		}
 		defer file.Close()
 
-		format.Node(file, fset, fNode)
+		err = format.Node(file, fset, fNode)
+		if err != nil {
+			fmt.Printf("Error formatting node: %v", err)
+		}
 	}
 }

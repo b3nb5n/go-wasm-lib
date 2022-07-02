@@ -2,30 +2,50 @@ package generator
 
 import (
 	"go/ast"
+
+	"golang.org/x/tools/go/ast/astutil"
 )
 
 // transforms the package  into a wasm wrapper package in place
 func (gen *Generator) WasmWrapperPkg(pkg *ast.Package) {
-	pkgIdent := &ast.Ident{Name: pkg.Name}
+	if pkg == nil {
+		pkg = gen.pkg
+	} else {
+		gen.pkg = pkg
+	}
+
+	pkgIdent := &ast.Ident{Name: pkg.Name + "wasm"}
 	for _, file := range pkg.Files {
 		file.Name = pkgIdent
 		gen.WasmWrapperFile(file)
 	}
 
-	gen.wasmEntry(pkg)
+	gen.wasmMain(pkg)
 }
 
 // transforms the file into a wasm wrapper file in place.
 // each function declaration is wrapped, all other declarations are removed
-func (gen *Generator) WasmWrapperFile(file *ast.File) {
-	for i, decl := range file.Decls {
+// if the given file is nil, a new wrapper file will be returned
+func (gen *Generator) WasmWrapperFile(file *ast.File) *ast.File {
+	if file == nil {
+		file = &ast.File{}
+	}
+	if file.Decls == nil {
+		file.Decls = make([]ast.Decl, 0)
+	}
+
+	declWrappers := make([]ast.Decl, 0)
+	for _, decl := range file.Decls {
 		if fn, ok := decl.(*ast.FuncDecl); ok {
 			gen.WasmWrapperFunc(fn)
-			continue
+			declWrappers = append(declWrappers, fn)
 		}
-
-		file.Decls[i] = nil
 	}
+
+	file.Decls = declWrappers
+	astutil.AddImport(gen.fset, file, "syscall/js")
+	
+	return file
 }
 
 // transforms the function declaration in place into a wasm wrapper around a call to the given function
