@@ -9,7 +9,7 @@ import (
 
 // returns an expression that casts jsValue to the given native type
 // if the value cant be directly cast, a runtime resolver is also returned.
-func (gen *Generator) ResolveValue(
+func ResolveValue(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType ast.Expr,
@@ -17,19 +17,19 @@ func (gen *Generator) ResolveValue(
 ) (ast.Expr, []ast.Stmt) {
 	switch nativeType := nativeType.(type) {
 	case *ast.Ident:
-		return gen.resolveIdent(name, jsValue, nativeType, dst)
+		return resolveIdent(name, jsValue, nativeType, dst)
 	case *ast.StarExpr:
-		return gen.resolvePointer(name, jsValue, nativeType, dst)
+		return resolvePointer(name, jsValue, nativeType, dst)
 	case *ast.ArrayType:
-		return gen.resolveArray(name, jsValue, nativeType, dst)
+		return resolveArray(name, jsValue, nativeType, dst)
 	case *ast.StructType:
-		return gen.resolveStruct(name, jsValue, nativeType, dst)
+		return resolveStruct(name, jsValue, nativeType, dst)
 	default:
 		panic(fmt.Errorf("Unrecognized native type : %v", nativeType))
 	}
 }
 
-func (gen *Generator) resolveIdent(
+func resolveIdent(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.Ident,
@@ -83,7 +83,7 @@ func (gen *Generator) resolveIdent(
 	return expr, resolver
 }
 
-func (gen *Generator) resolvePointer(
+func resolvePointer(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.StarExpr,
@@ -104,7 +104,7 @@ func (gen *Generator) resolvePointer(
 		})
 	}
 
-	_, eltResolver := gen.ResolveValue(
+	_, eltResolver := ResolveValue(
 		&ast.Ident{Name: name.Name + "Elt"},
 		jsValue,
 		nativeType.X,
@@ -152,7 +152,7 @@ func (gen *Generator) resolvePointer(
 	)
 }
 
-func (gen *Generator) resolveArray(
+func resolveArray(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.ArrayType,
@@ -211,7 +211,7 @@ func (gen *Generator) resolveArray(
 	}
 
 	idxIdent := &ast.Ident{Name: name.Name + "Idx"}
-	_, eltResolver := gen.ResolveValue(
+	_, eltResolver := ResolveValue(
 		&ast.Ident{Name: name.Name + "Elt"},
 		&ast.CallExpr{
 			Fun: &ast.SelectorExpr{
@@ -253,7 +253,7 @@ func (gen *Generator) resolveArray(
 	)
 }
 
-func (gen *Generator) resolveStruct(
+func resolveStruct(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.StructType,
@@ -273,7 +273,7 @@ func (gen *Generator) resolveStruct(
 
 	for _, field := range nativeType.Fields.List {
 		for _, fieldName := range field.Names {
-			_, fieldResolver := gen.ResolveValue(
+			_, fieldResolver := ResolveValue(
 				&ast.Ident{Name: name.Name + fieldName.Name},
 				&ast.CallExpr{
 					Fun: &ast.SelectorExpr{
@@ -296,14 +296,14 @@ func (gen *Generator) resolveStruct(
 	return dst, resolver
 }
 
-func (gen *Generator) resolveFuncArgs(params *ast.FieldList) (args []ast.Expr, resolver []ast.Stmt) {
+func resolveFuncArgs(params *ast.FieldList) (args []ast.Expr, resolver []ast.Stmt) {
 	var i int
 	args = make([]ast.Expr, params.NumFields())
 	resolvers := make([]ast.Stmt, 0)
 
 	for _, param := range params.List {
 		for _, name := range param.Names {
-			args[i], resolver = gen.ResolveValue(
+			args[i], resolver = ResolveValue(
 				name,
 				&ast.IndexExpr{
 					X: &ast.Ident{Name: "args"},

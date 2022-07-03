@@ -2,14 +2,13 @@ package main
 
 // import "path/filepath"
 
-// type Config struct {
-// 	SrcDir string // defaults to the current directory
-// 	OutDir string // defaults to the name of the SrcDir + _wasm
-// 	OutPkg string // defaults to the name of the src package + wasm
-// }
+type Config struct {
+	SrcDir string // defaults to the current directory
+	OutFile string // defaults to "wasm-wrappers.go"
+	ExportWrappers bool 
+}
 
 // func NewConfig() *Config {
 // 	config := &Config{}
-// 	config.SrcDir
 
 // }

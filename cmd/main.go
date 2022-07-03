@@ -32,23 +32,18 @@ func main() {
 	}
 
 	pkg := pkgs[pkgName]
-	gen := generator.New(fset)
-	gen.WasmWrapperPkg(pkg)
+	wrapperFile := generator.GenerateWrapperFile(pkg)
+	outPath := filepath.Join(srcPath, "wasm-wrappers.go")
+	outFile, err := os.Create(outPath)
+	if err != nil {
+		fmt.Printf("Error creating wrapper file: %v\n", err)
+		return
+	}
+	defer outFile.Close()
 
-	outDir := filepath.Join(filepath.Dir(srcPath), filepath.Base(srcPath) + "_wasm")
-	os.MkdirAll(outDir, os.ModePerm)
-	for srcPath, fNode := range pkg.Files {
-		outPath := filepath.Join(outDir, filepath.Base(srcPath))
-		file, err := os.Create(outPath)
-		if err != nil {
-			fmt.Printf("Error creating file %v: %v", outPath, err)
-			return
-		}
-		defer file.Close()
-
-		err = format.Node(file, fset, fNode)
-		if err != nil {
-			fmt.Printf("Error formatting node: %v", err)
-		}
+	err = format.Node(outFile, fset, wrapperFile)
+	if err != nil {
+		fmt.Printf("Error formatting wrapper file: %v\n", err)
+		return
 	}
 }
