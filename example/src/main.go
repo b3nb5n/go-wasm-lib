@@ -7,5 +7,9 @@ func Add(a, b int) int {
 }
 
 func Greet(name string) {
-	fmt.Println("Hello " + name)
+	fmt.Println("Hello ")
+}
+
+func unexported() {
+
 }
