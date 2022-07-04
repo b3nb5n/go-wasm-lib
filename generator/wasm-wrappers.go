@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -10,7 +11,12 @@ import (
 
 // returns a file containing wasm wrappers for each of the top-level function declarations in the pkg
 // and a wasmMain function that exposes each of the exported functions to js
-func GenerateWrapperFile(pkg *ast.Package) *ast.File {
+func GenerateWrapperFile(pkg *ast.Package, config *Config) (*ast.File, error) {
+	if pkg == nil {
+		return nil, fmt.Errorf("Pkg can't be nil")
+	}
+
+	gen := newGenerator(pkg, config)
 	funcSignatures := make(map[string]*ast.FuncType)
 	funcWrappers := make([]ast.Decl, 0)
 	for _, file := range pkg.Files {
@@ -21,26 +27,38 @@ func GenerateWrapperFile(pkg *ast.Package) *ast.File {
 				}
 
 				funcSignatures[fn.Name.Name] = fn.Type
-				funcWrappers = append(funcWrappers, wasmWrapperFunc(fn))
+				wrapper, err := gen.wasmWrapperFunc(fn)
+				if err != nil {
+					return nil, fmt.Errorf("Error wrapping function \"%s\": %v", fn.Name.Name, err)
+				}
+
+				funcWrappers = append(funcWrappers, wrapper)
 			}
 		}
 	}
 
 	wrapperFile := &ast.File{
 		Name:  &ast.Ident{Name: pkg.Name},
-		Decls: append(funcWrappers, wasmMainFunc(funcSignatures)),
+		Decls: append(funcWrappers, gen.wasmMainFunc(funcSignatures)),
 	}
 
 	astutil.AddImport(token.NewFileSet(), wrapperFile, "syscall/js")
-	return wrapperFile
+	return wrapperFile, nil
 }
 
 // returns a wrapper function that:
 // transforms dynamic js args into the given static function signature,
 // calls the given function with the resolved arguments,
 // and returns its results (nil if the given function has no return value)
-func wasmWrapperFunc(fn *ast.FuncDecl) *ast.FuncDecl {
-	args, argResolvers := resolveFuncArgs(fn.Type.Params)
+// 
+// wasm wrapper signature:
+// 	func exampleWasm(this js.Value, args []js.Value) any { ...
+func (gen *generator) wasmWrapperFunc(fn *ast.FuncDecl) (*ast.FuncDecl, error) {
+	args, argResolvers, err := gen.resolveFuncArgs(fn.Type.Params)
+	if err != nil {
+		return nil, err
+	}
+
 	funcCall := &ast.CallExpr{
 		Fun: &ast.Ident{
 			Name: fn.Name.Name,
@@ -62,7 +80,7 @@ func wasmWrapperFunc(fn *ast.FuncDecl) *ast.FuncDecl {
 	}
 
 	return &ast.FuncDecl{
-		Name: &ast.Ident{Name: fn.Name.Name + "Wasm"},
+		Name: &ast.Ident{Name: gen.wrapperName(fn.Name.Name)},
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{
 				List: []*ast.Field{
@@ -97,11 +115,11 @@ func wasmWrapperFunc(fn *ast.FuncDecl) *ast.FuncDecl {
 		Body: &ast.BlockStmt{
 			List: append(argResolvers, returnStmt),
 		},
-	}
+	}, nil
 }
 
 // returns an new function called "wasmMain" that exposes each of the given functions to js
-func wasmMainFunc(funcs map[string]*ast.FuncType) *ast.FuncDecl {
+func (gen *generator) wasmMainFunc(funcs map[string]*ast.FuncType) *ast.FuncDecl {
 	var i int
 	jsGlobalDecls := make([]ast.Stmt, len(funcs))
 	for name := range funcs {
@@ -126,7 +144,7 @@ func wasmMainFunc(funcs map[string]*ast.FuncType) *ast.FuncDecl {
 							X:   &ast.Ident{Name: "js"},
 							Sel: &ast.Ident{Name: "FuncOf"},
 						},
-						Args: []ast.Expr{&ast.Ident{Name: name + "Wasm"}},
+						Args: []ast.Expr{&ast.Ident{Name: gen.wrapperName(name)}},
 					},
 				},
 			},

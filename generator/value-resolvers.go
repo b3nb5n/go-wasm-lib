@@ -9,32 +9,33 @@ import (
 
 // returns an expression that casts jsValue to the given native type
 // if the value cant be directly cast, a runtime resolver is also returned.
-func ResolveValue(
+func (gen *generator) ResolveValue(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType ast.Expr,
 	dst ast.Expr,
-) (ast.Expr, []ast.Stmt) {
+) (ast.Expr, []ast.Stmt, error) {
 	switch nativeType := nativeType.(type) {
 	case *ast.Ident:
-		return resolveIdent(name, jsValue, nativeType, dst)
+		return gen.resolveIdent(name, jsValue, nativeType, dst)
 	case *ast.StarExpr:
-		return resolvePointer(name, jsValue, nativeType, dst)
+		return gen.resolvePointer(name, jsValue, nativeType, dst)
 	case *ast.ArrayType:
-		return resolveArray(name, jsValue, nativeType, dst)
+		return gen.resolveArray(name, jsValue, nativeType, dst)
 	case *ast.StructType:
-		return resolveStruct(name, jsValue, nativeType, dst)
+		return gen.resolveStruct(name, jsValue, nativeType, dst)
 	default:
+
 		panic(fmt.Errorf("Unrecognized native type : %v", nativeType))
 	}
 }
 
-func resolveIdent(
+func (gen *generator) resolveIdent(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.Ident,
 	dst ast.Expr,
-) (expr ast.Expr, resolver []ast.Stmt) {
+) (expr ast.Expr, resolver []ast.Stmt, err error) {
 	var method, typeCast string
 	switch typeStr := nativeType.String(); typeStr {
 	case "bool":
@@ -53,7 +54,12 @@ func resolveIdent(
 			typeCast = typeStr
 		}
 	default:
-		panic("unknown type identifier")
+		nativeType, err := gen.getTypeAlias(typeStr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Unresolved identifier: %v", err)
+		}
+
+		return gen.ResolveValue(&ast.Ident{Name: typeStr}, jsValue, nativeType, dst)
 	}
 
 	expr = &ast.CallExpr{
@@ -80,15 +86,15 @@ func resolveIdent(
 		expr = dst
 	}
 
-	return expr, resolver
+	return expr, resolver, err
 }
 
-func resolvePointer(
+func (gen *generator) resolvePointer(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.StarExpr,
 	dst ast.Expr,
-) (_ ast.Expr, resolver []ast.Stmt) {
+) (expr ast.Expr, resolver []ast.Stmt, err error) {
 	if dst == nil {
 		dst = name
 		resolver = append(resolver, &ast.DeclStmt{
@@ -104,12 +110,15 @@ func resolvePointer(
 		})
 	}
 
-	_, eltResolver := ResolveValue(
+	_, eltResolver, err := gen.ResolveValue(
 		&ast.Ident{Name: name.Name + "Elt"},
 		jsValue,
 		nativeType.X,
 		dst,
 	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Unresolved pointer element type %v: %v", nativeType.X, err)
+	}
 
 	return dst, append(
 		resolver,
@@ -149,15 +158,15 @@ func resolvePointer(
 				List: eltResolver,
 			},
 		},
-	)
+	), err
 }
 
-func resolveArray(
+func (gen *generator) resolveArray(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.ArrayType,
 	dst ast.Expr,
-) (_ ast.Expr, resolver []ast.Stmt) {
+) (expr ast.Expr, resolver []ast.Stmt, err error) {
 	lenExpr := nativeType.Len
 	if lenExpr == nil { // if the native type represents a slice
 		// create a variable to hold the runtime length
@@ -211,7 +220,7 @@ func resolveArray(
 	}
 
 	idxIdent := &ast.Ident{Name: name.Name + "Idx"}
-	_, eltResolver := ResolveValue(
+	_, eltResolver, err := gen.ResolveValue(
 		&ast.Ident{Name: name.Name + "Elt"},
 		&ast.CallExpr{
 			Fun: &ast.SelectorExpr{
@@ -223,6 +232,9 @@ func resolveArray(
 		nativeType.Elt,
 		&ast.IndexExpr{X: dst, Index: idxIdent},
 	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Unresolved array element type %v: %v", nativeType.Elt, err)
+	}
 
 	return dst, append(
 		resolver,
@@ -250,15 +262,15 @@ func resolveArray(
 				List: eltResolver,
 			},
 		},
-	)
+	), err
 }
 
-func resolveStruct(
+func (gen *generator) resolveStruct(
 	name *ast.Ident,
 	jsValue ast.Expr,
 	nativeType *ast.StructType,
 	dst ast.Expr,
-) (_ ast.Expr, resolver []ast.Stmt) {
+) (expr ast.Expr, resolver []ast.Stmt, err error) {
 	if dst == nil {
 		resolver = append(resolver, &ast.AssignStmt{
 			Lhs: []ast.Expr{name},
@@ -273,7 +285,7 @@ func resolveStruct(
 
 	for _, field := range nativeType.Fields.List {
 		for _, fieldName := range field.Names {
-			_, fieldResolver := ResolveValue(
+			_, fieldResolver, err := gen.ResolveValue(
 				&ast.Ident{Name: name.Name + fieldName.Name},
 				&ast.CallExpr{
 					Fun: &ast.SelectorExpr{
@@ -288,22 +300,25 @@ func resolveStruct(
 					Sel: fieldName,
 				},
 			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("Unresolved struct field type %v: %v", field.Type, err)
+			}
 
 			resolver = append(resolver, fieldResolver...)
 		}
 	}
 
-	return dst, resolver
+	return dst, resolver, err
 }
 
-func resolveFuncArgs(params *ast.FieldList) (args []ast.Expr, resolver []ast.Stmt) {
+func (gen *generator) resolveFuncArgs(params *ast.FieldList) (args []ast.Expr, resolver []ast.Stmt, err error) {
 	var i int
 	args = make([]ast.Expr, params.NumFields())
 	resolvers := make([]ast.Stmt, 0)
 
 	for _, param := range params.List {
 		for _, name := range param.Names {
-			args[i], resolver = ResolveValue(
+			args[i], resolver, err = gen.ResolveValue(
 				name,
 				&ast.IndexExpr{
 					X: &ast.Ident{Name: "args"},
@@ -315,6 +330,9 @@ func resolveFuncArgs(params *ast.FieldList) (args []ast.Expr, resolver []ast.Stm
 				param.Type,
 				nil,
 			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("Unresolved argument \"%s\" type %v: %v", name, param.Type, err)
+			}
 
 			if resolver != nil {
 				resolvers = append(resolvers, resolver...)
@@ -324,5 +342,5 @@ func resolveFuncArgs(params *ast.FieldList) (args []ast.Expr, resolver []ast.Stm
 		}
 	}
 
-	return args, resolvers
+	return args, resolvers, err
 }
